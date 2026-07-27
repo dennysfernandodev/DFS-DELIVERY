@@ -1,0 +1,17 @@
+{
+  "name": "dfs-delivery",
+  "private": true,
+  "packageManager": "pnpm@10.14.0",
+  "scripts": {
+    "dev": "turbo dev",
+    "build": "turbo build",
+    "lint": "turbo lint",
+    "db:generate": "pnpm --filter @dfs/database prisma:generate",
+    "db:migrate": "pnpm --filter @dfs/database prisma:migrate",
+    "db:studio": "pnpm --filter @dfs/database prisma:studio"
+  },
+  "devDependencies": {
+    "turbo": "^2.5.5",
+    "typescript": "^5.8.3"
+  }
+}
