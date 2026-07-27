@@ -1,0 +1,303 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum UserRole {
+  SUPER_ADMIN
+  TENANT_ADMIN
+  MANAGER
+  ATTENDANT
+}
+
+enum ConversationStatus {
+  AI_ACTIVE
+  HUMAN_ACTIVE
+  WAITING
+  CLOSED
+}
+
+enum MessageDirection {
+  INBOUND
+  OUTBOUND
+}
+
+enum MessageAuthor {
+  CUSTOMER
+  AI
+  HUMAN
+  SYSTEM
+}
+
+enum KnowledgeType {
+  INSTRUCTION
+  FAQ
+  POLICY
+  RESPONSE_EXAMPLE
+  DOCUMENT
+}
+
+enum OrderStatus {
+  DRAFT
+  PENDING_CONFIRMATION
+  CONFIRMED
+  PREPARING
+  READY
+  DELIVERED
+  CANCELED
+}
+
+model Tenant {
+  id          String   @id @default(cuid())
+  name        String
+  slug        String   @unique
+  document    String?
+  phone       String?
+  active      Boolean  @default(true)
+  aiEnabled   Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  users        User[]
+  stores       Store[]
+  customers    Customer[]
+  categories   Category[]
+  products     Product[]
+  conversations Conversation[]
+  knowledge    AiKnowledge[]
+  aiProfile    AiProfile?
+  orders       Order[]
+  auditLogs    AuditLog[]
+}
+
+model User {
+  id           String   @id @default(cuid())
+  tenantId     String?
+  name         String
+  email        String   @unique
+  passwordHash String
+  role         UserRole
+  active       Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  tenant       Tenant?  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  messages     Message[]
+  auditLogs    AuditLog[]
+
+  @@index([tenantId, role])
+}
+
+model Store {
+  id          String   @id @default(cuid())
+  tenantId    String
+  name        String
+  phone       String?
+  address     String?
+  city        String?
+  state       String?
+  pixKey      String?
+  opensAt     String?
+  closesAt    String?
+  active      Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  tenant      Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  inventories Inventory[]
+  orders      Order[]
+
+  @@index([tenantId, active])
+}
+
+model Customer {
+  id        String   @id @default(cuid())
+  tenantId  String
+  name      String?
+  phone     String
+  email     String?
+  notes     String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  tenant        Tenant         @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  conversations Conversation[]
+  orders        Order[]
+
+  @@unique([tenantId, phone])
+  @@index([tenantId])
+}
+
+model Category {
+  id        String   @id @default(cuid())
+  tenantId  String
+  name      String
+  slug      String
+  active    Boolean  @default(true)
+  sortOrder Int      @default(0)
+
+  tenant    Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  products  Product[]
+
+  @@unique([tenantId, slug])
+}
+
+model Product {
+  id          String   @id @default(cuid())
+  tenantId    String
+  categoryId  String?
+  name        String
+  description String?
+  sku         String?
+  price       Decimal  @db.Decimal(10, 2)
+  active      Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  tenant      Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  category    Category? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  inventories Inventory[]
+  orderItems  OrderItem[]
+
+  @@unique([tenantId, sku])
+  @@index([tenantId, active])
+}
+
+model Inventory {
+  id        String   @id @default(cuid())
+  storeId   String
+  productId String
+  quantity  Decimal  @default(0) @db.Decimal(12, 3)
+  updatedAt DateTime @updatedAt
+
+  store     Store    @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  product   Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@unique([storeId, productId])
+}
+
+model AiProfile {
+  id                 String   @id @default(cuid())
+  tenantId           String   @unique
+  assistantName      String   @default("Assistente DFS")
+  tone               String   @default("cordial, objetivo e vendedor")
+  welcomeMessage     String?
+  fallbackMessage    String?
+  humanHandoffText   String?
+  systemInstructions String   @db.Text
+  model              String   @default("gpt-4.1-mini")
+  temperature        Float    @default(0.3)
+  enabled             Boolean  @default(true)
+  updatedAt           DateTime @updatedAt
+
+  tenant             Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+}
+
+model AiKnowledge {
+  id        String        @id @default(cuid())
+  tenantId  String
+  type      KnowledgeType
+  title     String
+  content   String        @db.Text
+  active    Boolean       @default(true)
+  priority  Int           @default(0)
+  createdAt DateTime      @default(now())
+  updatedAt DateTime      @updatedAt
+
+  tenant    Tenant        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, active, type])
+}
+
+model Conversation {
+  id              String             @id @default(cuid())
+  tenantId        String
+  customerId      String
+  channel         String             @default("WHATSAPP")
+  externalChatId  String
+  status          ConversationStatus @default(AI_ACTIVE)
+  assignedUserId  String?
+  lastMessageAt   DateTime           @default(now())
+  createdAt       DateTime           @default(now())
+  updatedAt       DateTime           @updatedAt
+
+  tenant          Tenant             @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  customer        Customer           @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  messages        Message[]
+
+  @@unique([tenantId, channel, externalChatId])
+  @@index([tenantId, status, lastMessageAt])
+}
+
+model Message {
+  id             String           @id @default(cuid())
+  conversationId String
+  userId         String?
+  externalId     String?
+  direction      MessageDirection
+  author         MessageAuthor
+  content        String           @db.Text
+  metadata       Json?
+  createdAt      DateTime         @default(now())
+
+  conversation   Conversation     @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  user           User?            @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([conversationId, createdAt])
+}
+
+model Order {
+  id          String      @id @default(cuid())
+  publicCode  String      @unique
+  tenantId    String
+  storeId     String
+  customerId  String?
+  status      OrderStatus @default(DRAFT)
+  subtotal    Decimal     @default(0) @db.Decimal(10, 2)
+  deliveryFee Decimal     @default(0) @db.Decimal(10, 2)
+  discount    Decimal     @default(0) @db.Decimal(10, 2)
+  total       Decimal     @default(0) @db.Decimal(10, 2)
+  notes       String?
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+
+  tenant      Tenant      @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  store       Store       @relation(fields: [storeId], references: [id], onDelete: Restrict)
+  customer    Customer?   @relation(fields: [customerId], references: [id], onDelete: SetNull)
+  items       OrderItem[]
+
+  @@index([tenantId, status, createdAt])
+}
+
+model OrderItem {
+  id        String  @id @default(cuid())
+  orderId   String
+  productId String
+  name      String
+  unitPrice Decimal @db.Decimal(10, 2)
+  quantity  Decimal @db.Decimal(12, 3)
+  total     Decimal @db.Decimal(10, 2)
+
+  order     Order   @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  product   Product @relation(fields: [productId], references: [id], onDelete: Restrict)
+}
+
+model AuditLog {
+  id        String   @id @default(cuid())
+  tenantId  String?
+  userId    String?
+  action    String
+  entity    String
+  entityId  String?
+  metadata  Json?
+  createdAt DateTime @default(now())
+
+  tenant    Tenant?  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  user      User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([tenantId, createdAt])
+}
